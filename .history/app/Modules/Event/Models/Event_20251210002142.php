@@ -65,25 +65,4 @@ class Event extends Model
     {
         return $this->hasMany(EventTicketType::class);
     }
-
-    /**
-     * Indexlenecek veriyi belirle.
-     * Tüm veritabanını search engine'e gönderme, sadece arama yapılacakları gönder.
-     */
-    public function toSearchableArray(): array
-    {
-        // İlişkili veriyi (Venue) yüklüyoruz ki şehir bilgisi de aransın.
-        $this->loadMissing('venue');
-
-        return [
-            'id' => $this->id,
-            'name' => $this->name,
-            'description' => $this->description, // Description içinde de arama yapılsın
-            'category' => $this->category->value, // Enum value
-            'status' => $this->status->value,
-            'start_time' => $this->start_time->timestamp, // Unix timestamp (sıralama için)
-            'venue_name' => $this->venue->name,
-            'city' => $this->venue->city, // "İstanbul etkinlikleri" araması için
-        ];
-    }
 }
