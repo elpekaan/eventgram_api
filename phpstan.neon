@@ -1,0 +1,10 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app/
+
+    # Seviye 5 ile başlıyoruz. (Max 9)
+    # 5. seviye tip hatalarını yakalar ama bizi çok boğmaz.
+    level: 5
