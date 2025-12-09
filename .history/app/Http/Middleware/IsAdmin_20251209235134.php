@@ -1,0 +1,29 @@
+<?php
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+class IsAdmin
+{
+    public function handle(Request $request, Closure $next): Response
+    {
+        // Kullanıcı giriş yapmamışsa veya admin değilse 403 (Forbidden)
+        if (! $request->user() || ! $request->user()->is_admin) {
+            return response()->json(['message' => 'Access denied. Admins only.'], 403);
+        }
+
+        return $next($request);
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+            'is_admin' => 'boolean', // <--- BUNU DA EKLE
+        ];
+    }
+}
