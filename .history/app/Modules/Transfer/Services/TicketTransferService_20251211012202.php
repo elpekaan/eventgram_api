@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace App\Modules\Transfer\Services;
 
-use App\Modules\Payment\Models\PaymentTransaction;
 use App\Modules\Ticket\Enums\TicketStatus;
 use App\Modules\Ticket\Models\Ticket;
-use App\Modules\Ticket\Services\TicketService;
 use App\Modules\Transfer\DTOs\CreateTransferDTO;
 use App\Modules\Transfer\Enums\TransferStatus;
 use App\Modules\Transfer\Models\TicketTransfer;
-use App\Modules\Transfer\Models\TransferPayout;
 use App\Modules\User\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use App\Modules\Ticket\Services\TicketService;
+use App\Modules\Transfer\Models\TransferPayout;
+
 
 class TicketTransferService
 {
@@ -22,15 +22,13 @@ class TicketTransferService
         protected TicketService $ticketService
     ) {}
 
-    /**
-     * Transfer sürecini başlatır.
-     * Bilet kilitlenir ve transfer kaydı oluşturulur.
-     */
     public function createTransfer(User $seller, CreateTransferDTO $dto): TicketTransfer
     {
         return DB::transaction(function () use ($seller, $dto) {
 
             // 1. ADIM: Bileti bul ve KİLİTLE (Pessimistic Locking)
+            // 'lockForUpdate': Bu işlem bitene kadar başka kimse bu satırı okuyamaz/yazamaz.
+            // Bu, "Concurrent Transfer Attempt" riskini %100 engeller.
             /** @var Ticket $ticket */
             $ticket = Ticket::where('id', $dto->ticketId)
                 ->lockForUpdate()
@@ -43,22 +41,25 @@ class TicketTransferService
                 throw ValidationException::withMessages(['ticket_id' => 'Bu bilet size ait değil.']);
             }
 
-            // B) Bilet aktif mi?
+            // B) Bilet aktif mi? (Kullanılmış veya iptal edilmiş mi?)
             if ($ticket->status !== TicketStatus::ACTIVE) {
                 throw ValidationException::withMessages(['ticket_id' => 'Sadece aktif biletler transfer edilebilir.']);
             }
 
-            // C) Bilet şu an kilitli mi?
+            // C) Bilet şu an kilitli mi? (Başka bir işlemde mi?)
             if ($ticket->is_locked) {
                 throw ValidationException::withMessages(['ticket_id' => 'Bu bilet şu an başka bir işlemde (Transfer/Satış).']);
             }
 
-            // D) Zincirleme Transfer Kontrolü
+            // D) Zincirleme Transfer Kontrolü (Chain Transfer Prevention)
+            // Dokümanda: "Bir bilet sadece 1 kez transfer edilebilir" kuralı.
             if ($ticket->is_transferred) {
                 throw ValidationException::withMessages(['ticket_id' => 'Bu bilet daha önce transfer edilmiş. Tekrar transfer edilemez.']);
             }
 
-            // E) Fiyat Kontrolü
+            // E) Fiyat Kontrolü (Karaborsa Önleme)
+            // Satış fiyatı, orijinal bilet fiyatından yüksek olamaz.
+            // Ticket -> EventTicketType -> Price ilişkisinden fiyatı alıyoruz.
             $originalPrice = $ticket->ticketType->price;
             if ($dto->askingPrice > $originalPrice) {
                 throw ValidationException::withMessages(['asking_price' => "Maksimum transfer fiyatı {$originalPrice}₺ olabilir."]);
@@ -71,6 +72,8 @@ class TicketTransferService
             }
 
             // 4. ADIM: Transfer Kaydını Oluştur
+            // Komisyon hesaplama (Örn: %15 platform/mekan payı)
+            // Şimdilik basit tutuyoruz, ileride Venue ayarlarından çekeceğiz.
             $commissionRate = 0.15;
             $commissionAmount = $dto->askingPrice * $commissionRate;
             $sellerReceives = $dto->askingPrice - $commissionAmount;
@@ -82,11 +85,12 @@ class TicketTransferService
                 'asking_price' => $dto->askingPrice,
                 'platform_commission' => $commissionAmount,
                 'seller_receives' => $sellerReceives,
-                'status' => TransferStatus::PENDING_VENUE_APPROVAL,
-                'expires_at' => now()->addHours(48),
+                'status' => TransferStatus::PENDING_VENUE_APPROVAL, // İlk aşama: Mekan onayı
+                'expires_at' => now()->addHours(48), // 48 saat içinde onaylanmazsa düşer
             ]);
 
             // 5. ADIM: Bileti Kilitle
+            // Artık bilet üzerinde başka işlem yapılamaz (Check-in vb.)
             $ticket->update([
                 'is_locked' => true,
                 'locked_reason' => 'Transfer süreci başlatıldı',
@@ -96,19 +100,17 @@ class TicketTransferService
         });
     }
 
-    /**
-     * Mekan sahibi transferi onaylar.
-     */
     public function approveByVenue(User $user, TicketTransfer $transfer): TicketTransfer
     {
-        // 1. Yetki Kontrolü
+        // 1. Yetki Kontrolü: Onaylayan kişi, etkinliğin yapıldığı mekanın sahibi mi?
+        // İlişki Zinciri: Transfer -> Ticket -> Event -> Venue -> Owner(User)
         $venueOwnerId = $transfer->ticket->event->venue->user_id;
 
         if ($user->id !== $venueOwnerId) {
             throw ValidationException::withMessages(['error' => 'Bu transferi onaylama yetkiniz yok.']);
         }
 
-        // 2. Statü Kontrolü
+        // 2. Statü Kontrolü: Sadece 'pending_venue_approval' olanlar onaylanabilir.
         if ($transfer->status !== TransferStatus::PENDING_VENUE_APPROVAL) {
             throw ValidationException::withMessages(['error' => 'Bu transfer onaylanmaya uygun değil.']);
         }
@@ -122,24 +124,21 @@ class TicketTransferService
         return $transfer;
     }
 
-    /**
-     * Alıcı transferi kabul eder (Ödeme öncesi son adım).
-     */
     public function acceptByBuyer(User $user, TicketTransfer $transfer): TicketTransfer
     {
-        // 1. Yetki Kontrolü
+        // 1. Yetki Kontrolü: İşlemi yapan kişi, transferin hedefindeki alıcı mı?
         if ($user->id !== $transfer->to_user_id) {
             throw ValidationException::withMessages(['error' => 'Bu transfer size gönderilmemiş.']);
         }
 
-        // 2. Statü Kontrolü
+        // 2. Statü Kontrolü: Sadece 'pending_buyer_acceptance' olanlar kabul edilebilir.
         if ($transfer->status !== TransferStatus::PENDING_BUYER_ACCEPTANCE) {
             throw ValidationException::withMessages(['error' => 'Bu transfer kabul edilmeye uygun değil.']);
         }
 
         // 3. Zaman Aşımı Kontrolü
         if ($transfer->expires_at && $transfer->expires_at->isPast()) {
-            $transfer->update(['status' => TransferStatus::REJECTED]);
+            $transfer->update(['status' => TransferStatus::REJECTED]); // Expire oldu
             throw ValidationException::withMessages(['error' => 'Transfer teklifinin süresi dolmuş.']);
         }
 
@@ -151,24 +150,20 @@ class TicketTransferService
         return $transfer;
     }
 
-    /**
-     * Ödeme başarıyla tamamlandığında çağrılır.
-     * Bilet sahipliğini değiştirir ve QR kodunu yeniler.
-     */
     public function completeTransfer(TicketTransfer $transfer, PaymentTransaction $transaction): void
     {
         DB::transaction(function () use ($transfer, $transaction) {
             // 1. Transfer Statüsünü ve Transaction'ı Güncelle
             $transfer->update([
                 'status' => TransferStatus::COMPLETED,
-                'payment_transaction_id' => $transaction->id,
+                'payment_transaction_id' => $transaction->id, // <--- BAĞLANTI
                 'completed_at' => now(),
             ]);
 
-            // 2. Bilet Sahipliğini Değiştir ve Kilidi Aç
+            // ... (Geri kalan kodlar aynı: Bilet sahipliği, QR, Payout) ...
             $ticket = $transfer->ticket;
             $ticket->update([
-                'user_id' => $transfer->to_user_id, // Yeni Sahip
+                'user_id' => $transfer->to_user_id,
                 'is_transferred' => true,
                 'is_locked' => false,
                 'locked_reason' => null,
@@ -176,10 +171,8 @@ class TicketTransferService
                 'transferred_from' => $transfer->from_user_id,
             ]);
 
-            // 3. QR Kodunu Yenile (Güvenlik)
             $this->ticketService->regenerateQrCode($ticket);
 
-            // 4. Satıcıya Ödeme Kaydı Oluştur
             TransferPayout::create([
                 'transfer_id' => $transfer->id,
                 'seller_id' => $transfer->from_user_id,
