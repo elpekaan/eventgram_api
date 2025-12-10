@@ -12,7 +12,7 @@ use App\Modules\User\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-
+use App\Modules\Event\Models\EventTicketType;
 
 /**
  * @property int $id
@@ -32,7 +32,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $transferred_from
  * @property \Illuminate\Support\Carbon|null $qr_regenerated_at
  * @property-read \App\Modules\Event\Models\EventTicketType $ticketType
- * @property-read \App\Modules\Event\Models\Event $event
  */
 class Ticket extends Model
 {
@@ -84,7 +83,6 @@ class Ticket extends Model
 
     public function ticketType(): BelongsTo
     {
-        /** @var BelongsTo<EventTicketType, Ticket> */
         return $this->belongsTo(EventTicketType::class, 'event_ticket_type_id');
     }
 }

@@ -2,8 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Modules\Venue\Controllers\VenueController;
-use App\Modules\Venue\Controllers\AdminVenueController;
-use App\Modules\Venue\Controllers\VenueTransferController;
+use App\Modules\Venue\Controllers\AdminVenueController; //
 
 Route::prefix('venues')->group(function () {
 
