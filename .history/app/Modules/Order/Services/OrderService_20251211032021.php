@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use App\Modules\Payment\Models\PaymentTransaction;
-
+use App\Modules\Payment\Models\PaymentTransaction;
 
 class OrderService
 {
