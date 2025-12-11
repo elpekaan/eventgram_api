@@ -16,7 +16,21 @@ class CheckInRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'code' => ['required', 'string', 'size:12'], // Bilet kodlarımız 12 karakterli (TIC-...)
+            'ticket_code' => ['required', 'string', 'min:12', 'max:12'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'device_id' => ['nullable', 'string', 'max:255'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'ticket_code.required' => 'Bilet kodu gereklidir.',
+            'ticket_code.min' => 'Geçersiz bilet kodu formatı.',
+            'ticket_code.max' => 'Geçersiz bilet kodu formatı.',
+            'latitude.between' => 'Geçersiz konum bilgisi.',
+            'longitude.between' => 'Geçersiz konum bilgisi.',
         ];
     }
 }

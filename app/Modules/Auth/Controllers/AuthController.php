@@ -4,38 +4,28 @@ declare(strict_types=1);
 
 namespace App\Modules\Auth\Controllers;
 
+use App\Contracts\Services\AuthServiceInterface;
 use App\Http\Controllers\Controller;
-use App\Modules\Auth\Services\AuthService;
-use Illuminate\Http\JsonResponse;
-use App\Modules\Auth\DTOs\RegisterDTO;
-use App\Modules\Auth\Requests\RegisterRequest;
 use App\Modules\Auth\DTOs\LoginDTO;
+use App\Modules\Auth\DTOs\RegisterDTO;
 use App\Modules\Auth\Requests\LoginRequest;
+use App\Modules\Auth\Requests\RegisterRequest;
+use App\Modules\Auth\Resources\AuthResource;
+use App\Modules\Auth\Resources\UserResource;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
  * @group Auth Endpoints
- *
- * Kullanıcı kayıt, giriş ve profil işlemleri.
  */
 class AuthController extends Controller
 {
     public function __construct(
-        protected AuthService $authService
+        protected AuthServiceInterface $authService
     ) {}
 
     /**
-     * Kullanıcı Kaydı (Register)
-     *
-     * Sisteme yeni bir kullanıcı kaydeder ve erişim tokenı döner.
-     *
-     * @response 201 {
-     *   "message": "User registered successfully",
-     *   "data": {
-     *     "user": { "id": 1, "name": "Ali", "email": "ali@test.com" },
-     *     "token": "1|AbCdEf..."
-     *   }
-     * }
+     * Register
      */
     public function register(RegisterRequest $request): JsonResponse
     {
@@ -44,14 +34,12 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'User registered successfully',
-            'data' => $result
+            'data' => AuthResource::make($result)->resolve(),
         ], 201);
     }
 
     /**
-     * Kullanıcı Girişi (Login)
-     *
-     * Mevcut kullanıcıyı doğrular ve token verir.
+     * Login
      */
     public function login(LoginRequest $request): JsonResponse
     {
@@ -60,21 +48,30 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'User logged in successfully',
-            'data' => $result
+            'data' => AuthResource::make($result)->resolve(),
         ], 200);
     }
 
     /**
-     * Profil Bilgisi (Me)
-     *
-     * Giriş yapmış kullanıcının bilgilerini döner.
-     * Token gerektirir.
+     * Me
      */
     public function me(Request $request): JsonResponse
     {
         return response()->json([
-            'message' => 'Authenticated user retrieved successfully',
-            'data' => $request->user()
+            'message' => 'Authenticated user retrieved',
+            'data' => UserResource::make($request->user())->resolve(),
+        ], 200);
+    }
+
+    /**
+     * Logout
+     */
+    public function logout(Request $request): JsonResponse
+    {
+        $this->authService->logout($request->user()->id);
+
+        return response()->json([
+            'message' => 'Logged out successfully',
         ], 200);
     }
 }

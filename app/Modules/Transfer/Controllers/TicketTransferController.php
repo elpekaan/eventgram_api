@@ -4,56 +4,44 @@ declare(strict_types=1);
 
 namespace App\Modules\Transfer\Controllers;
 
+use App\Contracts\Services\TicketTransferServiceInterface;
 use App\Http\Controllers\Controller;
 use App\Modules\Transfer\DTOs\CreateTransferDTO;
+use App\Modules\Transfer\Models\TicketTransfer;
 use App\Modules\Transfer\Requests\CreateTransferRequest;
-use App\Modules\Transfer\Services\TicketTransferService;
+use App\Modules\Transfer\Resources\TransferResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TicketTransferController extends Controller
 {
     public function __construct(
-        protected TicketTransferService $transferService
+        protected TicketTransferServiceInterface $transferService
     ) {}
 
     public function store(CreateTransferRequest $request): JsonResponse
     {
-        // 1. DTO
         $dto = CreateTransferDTO::fromRequest($request);
-
-        // 2. Service
-        // Request'i yapan kullanıcı (Satıcı) ile servisi çağırıyoruz.
-        /** @var \App\Modules\User\Models\User $seller */
         $seller = $request->user();
 
         $transfer = $this->transferService->createTransfer($seller, $dto);
 
-        // 3. Response
         return response()->json([
             'message' => 'Transfer request created successfully. Waiting for venue approval.',
-            'data' => $transfer,
+            'data' => TransferResource::make($transfer)->resolve(),
         ], 201);
     }
 
     public function accept(Request $request, int $id): JsonResponse
     {
-        // 1. Kullanıcıyı al (Yoksa 401 hatası ver)
         $buyer = $request->user();
+        $transfer = TicketTransfer::findOrFail($id);
 
-        if (! $buyer) {
-            abort(401, 'Unauthenticated.');
-        }
-
-        // 2. Transferi bul
-        $transfer = \App\Modules\Transfer\Models\TicketTransfer::findOrFail($id);
-
-        // 3. Servisi çağır
         $this->transferService->acceptByBuyer($buyer, $transfer);
 
         return response()->json([
             'message' => 'Transfer accepted. Proceed to payment.',
-            'data' => $transfer->fresh(),
-        ]);
+            'data' => TransferResource::make($transfer->fresh())->resolve(),
+        ], 200);
     }
 }

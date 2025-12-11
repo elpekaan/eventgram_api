@@ -4,17 +4,16 @@ declare(strict_types=1);
 
 namespace App\Modules\Payment\Services;
 
+use App\Contracts\Services\PaymentReconciliationServiceInterface;
 use App\Modules\Payment\Models\PaymentTransaction;
-use App\Modules\Payment\Models\ReconciliationReport;
-
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
-class PaymentReconciliationService
+class PaymentReconciliationService implements PaymentReconciliationServiceInterface
 {
-    public function reconcileDate(Carbon $date): ReconciliationReport
+    public function reconcileDate(Carbon $date): array
     {
-        // 1. Bizim Verilerimiz (Platform)
-        // O günkü başarılı işlemleri çekiyoruz
+        // Platform transactions
         $platformTransactions = PaymentTransaction::whereDate('created_at', $date)
             ->where('status', 'success')
             ->get();
@@ -22,35 +21,35 @@ class PaymentReconciliationService
         $platformTotal = $platformTransactions->sum('amount');
         $platformCount = $platformTransactions->count();
 
-        // 2. İyzico Verileri (Provider)
-        // Normalde: $iyzico->getSettlement($date);
-        // MOCK: Bizim verimizle birebir aynıymış gibi (veya küçük farkla) simüle edelim.
+        // Provider data (mocked)
         $providerData = $this->mockProviderData($platformTransactions);
-
         $providerTotal = $providerData['total_amount'];
         $providerCount = $providerData['count'];
 
-        // 3. Karşılaştırma
+        // Compare
         $diff = abs($platformTotal - $providerTotal);
         $status = $diff < 0.01 ? 'matched' : 'mismatch';
 
-        // 4. Raporu Kaydet
-        return ReconciliationReport::create([
-            'date' => $date,
+        Log::info('Payment reconciliation completed', [
+            'date' => $date->toDateString(),
+            'status' => $status,
+            'platform_total' => $platformTotal,
+            'provider_total' => $providerTotal,
+        ]);
+
+        return [
+            'date' => $date->toDateString(),
             'platform_count' => $platformCount,
             'platform_total' => $platformTotal,
             'provider_count' => $providerCount,
             'provider_total' => $providerTotal,
             'status' => $status,
             'difference' => $diff,
-            'discrepancies' => $status === 'mismatch' ? ['note' => 'Simulated mismatch'] : null,
-        ]);
+        ];
     }
 
     private function mockProviderData($transactions): array
     {
-        // Test amaçlı: Bazen tutsun, bazen tutmasın diye random yapabiliriz.
-        // Ama şimdilik "Her şey yolunda" senaryosu:
         return [
             'total_amount' => $transactions->sum('amount'),
             'count' => $transactions->count(),

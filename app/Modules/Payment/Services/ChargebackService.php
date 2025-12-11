@@ -4,45 +4,119 @@ declare(strict_types=1);
 
 namespace App\Modules\Payment\Services;
 
-use App\Modules\Order\Enums\OrderStatus;
+use App\Contracts\Services\ChargebackServiceInterface;
+use App\Modules\Payment\Events\ChargebackReceived;
 use App\Modules\Payment\Models\Chargeback;
 use App\Modules\Payment\Models\PaymentTransaction;
-use App\Modules\Ticket\Enums\TicketStatus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-class ChargebackService
+class ChargebackService implements ChargebackServiceInterface
 {
+    /**
+     * Handle chargeback dispute from bank
+     */
     public function handleDispute(PaymentTransaction $transaction, array $bankData): Chargeback
     {
         return DB::transaction(function () use ($transaction, $bankData) {
             $order = $transaction->order;
 
-            // 1. Chargeback Kaydı Oluştur
+            // Create chargeback record
             $chargeback = Chargeback::create([
                 'payment_transaction_id' => $transaction->id,
                 'order_id' => $order->id,
                 'user_id' => $order->user_id,
                 'amount' => $bankData['amount'] ?? $transaction->amount,
-                'reason_code' => $bankData['reason_code'] ?? 'UNKNOWN',
-                'reason_description' => $bankData['reason_description'] ?? 'Bank dispute received',
-                'dispute_date' => now(),
+                'reason' => $bankData['reason'] ?? 'Unknown',
+                'reason_code' => $bankData['reason_code'] ?? null,
+                'case_id' => $bankData['case_id'] ?? null,
+                'chargeback_date' => now(),
                 'status' => 'received',
-                'evidence_snapshot' => [
-                    'ip_address' => '127.0.0.1', // Loglardan çekilmeli
-                    'ticket_download_count' => 0, // İleride eklenecek
-                    'user_history' => 'Clean',
-                ]
             ]);
 
-            // 2. Siparişi "Chargeback" statüsüne çek
-            $order->update(['status' => OrderStatus::CHARGEBACK]);
+            // Update order
+            $order->update([
+                'status' => 'chargeback',
+                'chargeback_at' => now(),
+            ]);
 
-            // 3. Biletleri Blokla (İçeri giremesinler!)
-            $order->tickets()->update(['status' => TicketStatus::BLOCKED]);
+            // Block tickets
+            $order->tickets()->update([
+                'status' => 'chargeback',
+                'chargeback_at' => now(),
+            ]);
 
-            // 4. Admin Logu
-            Log::critical("CHARGEBACK ALARMI! Order #{$order->id} için itiraz geldi. Biletler bloklandı.");
+            // Fire event
+            event(new ChargebackReceived($chargeback));
+
+            // Critical log
+            Log::critical('CHARGEBACK RECEIVED', [
+                'chargeback_id' => $chargeback->id,
+                'order_id' => $order->id,
+                'amount' => $chargeback->amount,
+                'reason' => $chargeback->reason,
+            ]);
+
+            return $chargeback;
+        });
+    }
+
+    /**
+     * Submit evidence to fight chargeback
+     */
+    public function submitEvidence(int $chargebackId, array $evidence, string $notes): Chargeback
+    {
+        return DB::transaction(function () use ($chargebackId, $evidence, $notes) {
+            $chargeback = Chargeback::findOrFail($chargebackId);
+            
+            $chargeback->submitDispute($evidence, $notes);
+
+            Log::info('Chargeback evidence submitted', [
+                'chargeback_id' => $chargeback->id,
+            ]);
+
+            return $chargeback;
+        });
+    }
+
+    /**
+     * Mark chargeback as won
+     */
+    public function markAsWon(int $chargebackId, string $notes): Chargeback
+    {
+        return DB::transaction(function () use ($chargebackId, $notes) {
+            $chargeback = Chargeback::findOrFail($chargebackId);
+            
+            $chargeback->markAsWon($notes);
+
+            // Restore order
+            $chargeback->order->update(['status' => 'completed']);
+
+            // Restore tickets
+            $chargeback->order->tickets()->update(['status' => 'active']);
+
+            Log::info('Chargeback won', [
+                'chargeback_id' => $chargeback->id,
+            ]);
+
+            return $chargeback;
+        });
+    }
+
+    /**
+     * Mark chargeback as lost
+     */
+    public function markAsLost(int $chargebackId, string $notes): Chargeback
+    {
+        return DB::transaction(function () use ($chargebackId, $notes) {
+            $chargeback = Chargeback::findOrFail($chargebackId);
+            
+            $chargeback->markAsLost($notes);
+
+            Log::warning('Chargeback lost', [
+                'chargeback_id' => $chargeback->id,
+                'amount' => $chargeback->amount,
+            ]);
 
             return $chargeback;
         });

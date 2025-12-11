@@ -6,9 +6,10 @@ namespace App\Modules\Order\Enums;
 
 enum OrderStatus: string
 {
-    case PENDING = 'pending';     // Ödeme bekleniyor (Locking devrede)
-    case PAID = 'paid';           // Ödeme başarılı
-    case FAILED = 'failed';       // Ödeme başarısız veya zaman aşımı
+    case PENDING_PAYMENT = 'pending_payment';
+    case COMPLETED = 'completed';
+    case CANCELLED = 'cancelled';
     case REFUNDED = 'refunded';
-    case CHARGEBACK = 'chargeback';  // İade edildi
+    case REFUND_REQUESTED = 'refund_requested';
+    case CHARGEBACK = 'chargeback';
 }

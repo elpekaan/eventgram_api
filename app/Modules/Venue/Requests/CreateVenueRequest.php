@@ -10,21 +10,36 @@ class CreateVenueRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // Sadece giriş yapmış kullanıcılar mekan oluşturabilir.
-        // Zaten route'a 'auth:sanctum' middleware ekleyeceğiz ama burası da true olmalı.
         return true;
     }
 
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255', 'unique:venues,name'], // Aynı isimde mekan olmasın
-            'description' => ['nullable', 'string'],
+            'name' => ['required', 'string', 'min:3', 'max:255'],
+            'description' => ['nullable', 'string', 'max:5000'],
             'city' => ['required', 'string', 'max:100'],
             'address' => ['required', 'string', 'max:500'],
-            'capacity' => ['required', 'integer', 'min:10'], // En az 10 kişilik mekan
-            'phone' => ['nullable', 'string', 'max:20'],
+            'capacity' => ['required', 'integer', 'min:10', 'max:1000000'],
+            'phone' => ['nullable', 'string', 'regex:/^[0-9\s\-\+\(\)]+$/', 'max:20'],
             'website' => ['nullable', 'url', 'max:255'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'name.required' => 'Mekan adı zorunludur.',
+            'name.min' => 'Mekan adı en az 3 karakter olmalıdır.',
+            'name.max' => 'Mekan adı en fazla 255 karakter olabilir.',
+            'description.max' => 'Açıklama en fazla 5000 karakter olabilir.',
+            'city.required' => 'Şehir seçimi zorunludur.',
+            'address.required' => 'Adres bilgisi zorunludur.',
+            'capacity.required' => 'Kapasite bilgisi zorunludur.',
+            'capacity.min' => 'Minimum kapasite 10 kişi olmalıdır.',
+            'capacity.max' => 'Maksimum kapasite 1.000.000 kişi olabilir.',
+            'phone.regex' => 'Geçerli bir telefon numarası giriniz.',
+            'website.url' => 'Geçerli bir web sitesi adresi giriniz.',
         ];
     }
 }

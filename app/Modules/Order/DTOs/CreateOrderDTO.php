@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Modules\Order\DTOs;
 
-use App\Shared\DTOs\BaseDTO;
-use Illuminate\Foundation\Http\FormRequest;
+use App\DTOs\BaseDTO;
+use Illuminate\Http\Request;
 
 final readonly class CreateOrderDTO extends BaseDTO
 {
@@ -14,20 +14,21 @@ final readonly class CreateOrderDTO extends BaseDTO
         public int $eventId,
         public int $ticketTypeId,
         public int $quantity,
+        public ?string $couponCode,
+        public string $ipAddress,
+        public string $userAgent,
     ) {}
 
-    public static function fromRequest(FormRequest $request): static
+    public static function fromRequest(Request $request): self
     {
-        // User ID'yi request body'den değil, Auth token'dan alıyoruz (Güvenlik)
-        /** @var \App\Modules\User\Models\User $user */
-        $user = $request->user();
-        $data = $request->validated();
-
-        return new static(
-            userId: $user->id,
-            eventId: (int) $data['event_id'],
-            ticketTypeId: (int) $data['ticket_type_id'],
-            quantity: (int) $data['quantity'],
+        return new self(
+            userId: $request->user()->id,
+            eventId: (int) $request->input('event_id'),
+            ticketTypeId: (int) $request->input('ticket_type_id'),
+            quantity: (int) $request->input('quantity'),
+            couponCode: $request->input('coupon_code'),
+            ipAddress: $request->ip(),
+            userAgent: $request->userAgent(),
         );
     }
 }

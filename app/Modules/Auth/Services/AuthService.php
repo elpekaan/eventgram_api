@@ -4,60 +4,111 @@ declare(strict_types=1);
 
 namespace App\Modules\Auth\Services;
 
+use App\Contracts\Services\AuthServiceInterface;
+use App\Modules\Auth\DTOs\AuthResponseDTO;
 use App\Modules\Auth\DTOs\RegisterDTO;
 use App\Modules\Auth\DTOs\LoginDTO;
+use App\Modules\Auth\Events\UserRegistered;
+use App\Modules\Auth\Events\UserLoggedIn;
 use App\Modules\User\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Log;
 
-class AuthService
+class AuthService implements AuthServiceInterface
 {
     /**
-     * Yeni kullanıcı kaydı ve token oluşturma işlemi.
-     * Array dönüş tipi {user: User, token: string} şeklindedir.
+     * Register new user with email verification token
      */
-    public function register(RegisterDTO $dto): array
+    public function register(RegisterDTO $dto): AuthResponseDTO
     {
-        // Kayıt işlemi burada yapılacak
         return DB::transaction(function () use ($dto) {
-            // 1. Kullanıcı oluşturma
+            // 1. Create user
             $user = User::create([
                 'name' => $dto->name,
                 'email' => $dto->email,
                 'password' => Hash::make($dto->password),
+                'email_verification_token' => Str::random(64),
+                'role' => 'user',
+                'points' => 0,
+                'level' => 1,
             ]);
-            // 2. Token oluşturma ('auth_token' adıyla)
+
+            // 2. Create token
             $token = $user->createToken('auth_token')->plainTextToken;
 
-            return [
-                'user' => $user,
-                'token' => $token,
-            ];
+            // 3. Fire event
+            event(new UserRegistered($user));
+
+            // 4. Log
+            Log::info('User registered', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+            ]);
+
+            return new AuthResponseDTO(
+                user: $user,
+                token: $token,
+            );
         });
     }
 
     /**
-     * Kullanıcı girişi ve token oluşturma.
+     * Login user with credentials
+     * 
      * @throws ValidationException
      */
-    public function login(LoginDTO $dto): array
+    public function login(LoginDTO $dto): AuthResponseDTO
     {
-        $user = User::where('email', $dto->email)->first();
+        return DB::transaction(function () use ($dto) {
+            // 1. Find user
+            $user = User::where('email', $dto->email)->first();
 
-        // Kullanıcı bulunamazsa veya şifre yanlışsa hata fırlat
-        if (!$user || !Hash::check($dto->password, $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
+            // 2. Validate credentials
+            if (!$user || !Hash::check($dto->password, $user->password)) {
+                throw ValidationException::withMessages([
+                    'email' => ['The provided credentials are incorrect.'],
+                ]);
+            }
+
+            // 3. Create token
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            // 4. Fire event
+            event(new UserLoggedIn(
+                user: $user,
+                ipAddress: request()->ip() ?? 'unknown',
+                userAgent: request()->userAgent() ?? 'unknown',
+            ));
+
+            // 5. Log
+            Log::info('User logged in', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'ip' => request()->ip(),
             ]);
-        }
 
-        // Token oluştur.
-        $token = $user->createToken('auth_token')->plainTextToken;
+            return new AuthResponseDTO(
+                user: $user,
+                token: $token,
+            );
+        });
+    }
 
-        return [
-            'user' => $user,
-            'token' => $token,
-        ];
+    /**
+     * Logout user (revoke all tokens)
+     */
+    public function logout(int $userId): void
+    {
+        $user = User::findOrFail($userId);
+        
+        // Revoke all tokens
+        $user->tokens()->delete();
+
+        Log::info('User logged out', [
+            'user_id' => $user->id,
+        ]);
     }
 }
