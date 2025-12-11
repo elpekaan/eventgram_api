@@ -9,5 +9,4 @@ enum TicketStatus: string
     case ACTIVE = 'active';       // Kullanılabilir
     case USED = 'used';           // Kapıda okutuldu
     case CANCELLED = 'cancelled'; // İptal edildi
-    case BLOCKED = 'blocked';
 }

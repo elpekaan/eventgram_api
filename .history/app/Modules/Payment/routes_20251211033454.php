@@ -3,8 +3,6 @@
 use Illuminate\Support\Facades\Route;
 use App\Modules\Payment\Controllers\MockPaymentController;
 use App\Modules\Payment\Controllers\IyzicoWebhookController;
-use App\Modules\Payment\Controllers\MockChargebackController;
-
 
 Route::prefix('payments')->group(function () {
 
