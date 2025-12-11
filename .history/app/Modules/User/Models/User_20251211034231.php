@@ -21,7 +21,7 @@ use App\Modules\Social\Traits\CanFollow;
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable, CanFollow;
+    use HasApiTokens, HasFactory, Notifiable;, CanFollow;
 
     /**
      * The attributes that are mass assignable.
