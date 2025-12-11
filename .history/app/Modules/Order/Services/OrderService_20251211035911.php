@@ -84,9 +84,6 @@ class OrderService
 
             // 2. Biletleri oluştur
             $this->ticketService->generateTickets($order);
-
-            // Mail işlemini kuyruğa at (sync driver kullandığımız için hemen çalışacak)
-            SendTicketEmailJob::dispatch($order);
         });
     }
 }
